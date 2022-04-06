@@ -1,0 +1,41 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS CloudFormation Template To Create a DynamoDB
+
+Parameters:
+  TableName:
+    Type: String
+    Default: stocks-table
+  FirstElementName:
+    Type: String
+    Default: id
+    Description: Key Name
+  FirstElementType:
+    Type: String
+    Default: S
+    Description: > 
+      S - the attribute is of type String
+      N - the attribute is of type Number
+      B - the attribute is of type Binary
+Resources:
+  DynamoTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref TableName
+      AttributeDefinitions:
+        - 
+          AttributeName: !Ref FirstElementName
+          AttributeType: !Ref FirstElementType
+      KeySchema:
+        - 
+          AttributeName: !Ref FirstElementName
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5 
+Outputs:
+  TableName:
+    Description: Table Created using this template.
+    Value: !Ref DynamoTable
+  TableARN:
+    Description: Table Created using this template.
+    Value: !GetAtt DynamoTable.Arn

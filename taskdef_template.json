@@ -1,0 +1,36 @@
+{
+    "family": "stocks-task",
+    "requiresCompatibilities": ["FARGATE"],
+    "taskRoleArn": "${TASK_ROLE_ARN}",
+    "executionRoleArn": "${TASK_EXECUTION_ROLE_ARN}",
+    "networkMode": "awsvpc",
+    "cpu": "256",
+    "memory": "0.5GB",
+    "containerDefinitions": [
+        {
+            "name": "${TASK_CONTAINER_NAME}",
+            "image": "<IMAGE>",
+            "essential": true,
+            "environment": [
+                { "name" : "Tag", "value" : "${IMAGE_TAG}" },
+                { "name" : "DYNAMO_HOST", "value" : "${TASK_DYNAMO_HOST}" },
+                { "name" : "DYNAMO_REGION", "value" : "${AWS_DEFAULT_REGION}" },
+                { "name" : "DEPLOYMENT_TYPE", "value" : "test" },
+                { "name" : "NODE_ENV", "value" : "${TASK_ENVIRONMENT}"}
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "${TASK_LOG_GROUP}",
+                    "awslogs-region":"${AWS_DEFAULT_REGION}",
+                    "awslogs-stream-prefix": "ecs"
+                  }
+            },
+            "portMappings": [
+                {
+                    "containerPort": ${TASK_CONTAINER_PORT}
+                }
+            ]
+        }
+    ]
+}

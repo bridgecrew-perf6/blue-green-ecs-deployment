@@ -1,0 +1,20 @@
+#!/bin/bash
+set -e
+
+echo "Generating configuration files based on the \$NODE_ENV value..."
+FILES=/tmp/config/*
+for f in $FILES
+do
+  c=$(basename $f .tmp)
+
+  if [[ "$c" == "$NODE_ENV" ]]; then
+    echo "Setting $c config file ... "
+    envsubst < $f > /usr/src/app/config.js
+  else
+    echo "Skipping the $c environment"
+    envsubst < $f > /usr/src/app/config/${c}.ignored
+  fi
+done
+
+echo "starting $@"
+exec "$@"

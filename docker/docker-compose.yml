@@ -1,0 +1,23 @@
+version: '3'
+services:
+  nodejs:
+    build:
+      context: '..'
+      dockerfile: 'docker/Dockerfile'
+    ports:
+    - '8080:8080'
+    environment:
+      DYNAMO_HOST: 'http://dynamodb:8000'
+      DYNAMO_REGION: 'local'
+      AWS_ACCESS_KEY_ID: 'DUMMYIDEXAMPLE'
+      AWS_SECRET_ACCESS_KEY: 'DUMMYEXAMPLEKEY'
+  dynamodb:
+    image:  amazon/dynamodb-local
+    container_name: my-dynamodb
+    hostname: dynamodb
+    restart: always
+    volumes:
+      -  ../dynamo-test:/home/dynamodblocal/data
+    ports:
+      - 8000:8000
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath /home/dynamodblocal/data/"

@@ -1,0 +1,341 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: IAM Policy and Groups template.
+Resources:
+  AWSCodeDeployPolicyForECS:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: AWSCodeDeployRoleForECS
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'ecs:DescribeServices'
+              - 'ecs:CreateTaskSet'
+              - 'ecs:UpdateServicePrimaryTaskSet'
+              - 'ecs:DeleteTaskSet'
+              - 'ecs:*'
+              - 'elasticloadbalancing:DescribeTargetGroups'
+              - 'elasticloadbalancing:DescribeListeners'
+              - 'elasticloadbalancing:ModifyListener'
+              - 'elasticloadbalancing:DescribeRules'
+              - 'elasticloadbalancing:ModifyRule'
+              - 'lambda:InvokeFunction'
+              - 'cloudwatch:DescribeAlarms'
+              - 'sns:Publish'
+              - 's3:GetObject'
+              - 's3:GetObjectVersion'
+            Resource: '*'
+            Effect: Allow
+          - Effect: Allow
+            Resource:
+              - 'arn:aws:s3:::stocks.api.pipeline'
+            Action:
+              - 's3:ListBucket'
+          - Effect: Allow
+            Resource:
+              - 'arn:aws:s3:::stocks.api.pipeline/*'
+            Action:
+              - 's3:PutObject'
+              - 's3:GetObject'
+              - 's3:GetObjectVersion'
+              - 's3:GetBucketAcl'
+              - 's3:GetBucketLocation'
+          - Action:
+              - 'iam:PassRole'
+            Effect: Allow
+            Resource: '*'
+            Condition:
+              StringLike:
+                'iam:PassedToService':
+                  - ecs-tasks.amazonaws.com
+      Roles:
+        - !Ref AWSCodeDeployRoleForECS
+  AWSCodeDeployRoleForECS:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service:
+                - codedeploy.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: /
+  CodeBuildBasePolicyStocksAPI:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: CodeBuildBasePolicy_StocksAPI
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Resource:
+              - >-
+                arn:aws:logs:us-east-1:380637079963:log-group:/aws/codebuild/stocks-api-build
+              - >-
+                arn:aws:logs:us-east-1:380637079963:log-group:/aws/codebuild/stocks-api-build:*
+            Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+          - Effect: Allow
+            Resource:
+              - 'arn:aws:s3:::stocks.api.pipeline/*'
+            Action:
+              - 's3:PutObject'
+              - 's3:GetObject'
+              - 's3:GetObjectVersion'
+              - 's3:GetBucketAcl'
+              - 's3:GetBucketLocation'
+          - Effect: Allow
+            Resource:
+              - 'arn:aws:codecommit:us-east-1:380637079963:tremend-stocks-api'
+            Action:
+              - 'codecommit:GitPull'
+          - Effect: Allow
+            Action:
+              - 'codebuild:CreateReportGroup'
+              - 'codebuild:CreateReport'
+              - 'codebuild:UpdateReport'
+              - 'codebuild:BatchPutTestCases'
+              - 'codebuild:BatchPutCodeCoverages'
+            Resource:
+              - >-
+                arn:aws:codebuild:us-east-1:380637079963:report-group/tremend-stocks-api-*
+          - Effect: Allow
+            Resource:
+              - '*'
+            Action:
+              - 'ecr:*'
+              - 'ssm:GetParameters'
+      Roles:
+        - !Ref CodeBuildTremendAPIs
+  CodeBuildTremendAPIs:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: /
+  CodePipelineExecutionStocksAPI:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: CodeBuildBasePolicy_StocksAPI
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'codepipeline:StartPipelineExecution'
+            Resource:
+              - 'arn:aws:codepipeline:us-east-1:380637079963:tremend-stocks-api'
+          - Effect: Allow
+            Resource:
+              - '*'
+            Action:
+              - 'codecommit:CancelUploadArchive'
+              - 'codecommit:GetBranch'
+              - 'codecommit:GetCommit'
+              - 'codecommit:GetUploadArchiveStatus'
+              - 'codecommit:UploadArchive'
+          - Effect: Allow
+            Resource:
+              - 'arn:aws:s3:::stocks.api.pipeline/*'
+            Action:
+              - 's3:PutObject'
+              - 's3:GetObject'
+              - 's3:GetObjectVersion'
+              - 's3:GetBucketAcl'
+              - 's3:GetBucketLocation'
+          - Effect: Allow
+            Resource:
+              - 'arn:aws:s3:::stocks.api.pipeline'
+            Action:
+              - 's3:ListBucket'
+          - Effect: Allow
+            Resource:
+              - '*'
+            Action:
+              - 'codebuild:BatchGetBuilds'
+              - 'codebuild:StartBuild'
+          - Effect: Allow
+            Action:
+              - codedeploy:CreateApplication
+              - codedeploy:CreateDeployment
+              - codedeploy:CreateDeploymentGroup
+              - codedeploy:GetApplication
+              - codedeploy:GetDeployment
+              - codedeploy:GetDeploymentGroup
+              - codedeploy:ListApplications
+              - codedeploy:ListDeploymentGroups
+              - codedeploy:ListDeployments
+              - codedeploy:StopDeployment
+              - codedeploy:GetDeploymentTarget
+              - codedeploy:ListDeploymentTargets
+              - codedeploy:GetDeploymentConfig
+              - codedeploy:GetApplicationRevision
+              - codedeploy:RegisterApplicationRevision
+              - codedeploy:BatchGetApplicationRevisions
+              - codedeploy:BatchGetDeploymentGroups
+              - codedeploy:BatchGetDeployments
+              - codedeploy:BatchGetApplications
+              - codedeploy:ListApplicationRevisions
+              - codedeploy:ListDeploymentConfigs
+              - codedeploy:ContinueDeployment
+              - sns:ListTopics
+              - cloudwatch:DescribeAlarms
+              - lambda:ListFunctions
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - 'ecs:DescribeServices'
+              - 'ecs:CreateTaskSet'
+              - 'ecs:UpdateServicePrimaryTaskSet'
+              - 'ecs:DeleteTaskSet'
+              - 'ecs:RegisterTaskDefinition'
+              - 'ecs:*'
+            Resource: '*'
+          - Action:
+              - 'iam:PassRole'
+            Effect: Allow
+            Resource: '*'
+      Roles:
+        - !Ref APIsPipelineExecutionRole
+  APIsPipelineExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: 'sts:AssumeRole'
+          - Effect: Allow
+            Principal:
+              Service: codedeploy.amazonaws.com
+            Action: 'sts:AssumeRole'
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: /
+  ECSTaskPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: AWSCodeDeployRoleForECS
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              # ECS tasks to download images from ECR
+              - ecr:GetAuthorizationToken
+              - ecr:BatchCheckLayerAvailability
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+              # ECS tasks to upload logs to CloudWatch
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogStreams
+              # ECS tasks to use DynamoDB
+              - dynamodb:Batch*
+              - dynamodb:Delete*
+              - dynamodb:DescribeTable
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:Update*
+              - dynamodb:Scan
+            Resource: '*'
+            Effect: Allow
+          - Action:
+              - 'iam:PassRole'
+            Effect: Allow
+            Resource: '*'
+      Roles:
+        - !Ref EcsTaskRole
+  EcsTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ECS_TaskRole
+      ManagedPolicyArns:
+          - "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+  ECSExecutionTaskPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: AWSCodeDeployRoleForECS
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              # ECS tasks to download images from ECR
+              - ecr:GetAuthorizationToken
+              - ecr:BatchCheckLayerAvailability
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+              # ECS tasks to upload logs to CloudWatch
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              - logs:DescribeLogStream
+            Resource: '*'
+            Effect: Allow
+          - Action:
+              - kms:Decrypt
+              - "secretsmanager:GetSecretValue"
+            Resource: '*'
+            Effect: Allow
+      Roles:
+        - !Ref EcsTaskExecutionRole
+  EcsTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ECS_ExecutionTaskRole
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+Outputs:
+  CodePipelineExecutionRoleArn:
+    Value: !GetAtt 
+      - APIsPipelineExecutionRole
+      - Arn
+    Description: CodePipeline IAM Role ARN
+  CodeBuildRoleArn:
+    Value: !GetAtt 
+      - CodeBuildTremendAPIs
+      - Arn
+    Description: CodeBuild IAM Role ARN
+  CodeDeployRoleArn:
+    Value: !GetAtt 
+      - AWSCodeDeployRoleForECS
+      - Arn
+    Description: CodeBuild IAM Role ARN
+  ExecutionTaskRoleArn:
+    Value: !GetAtt 
+      - EcsTaskExecutionRole
+      - Arn
+    Description: ECS execution task IAM Role ARN
+  TaskRoleArn:
+    Value: !GetAtt 
+      - EcsTaskRole
+      - Arn
+    Description: ECS task IAM Role ARN

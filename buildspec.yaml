@@ -1,0 +1,49 @@
+version: 0.2
+
+phases:
+  # install:  
+  #   runtime-versions:
+  #       docker: 18     
+  #   commands: 
+  #     - nohup /usr/local/bin/dockerd --host=unix:///var/run/docker.sock --host=tcp://127.0.0.1:2375 --storage-driver=overlay2&
+  #     - timeout 15 sh -c "until docker info; do echo .; sleep 1; done"
+  pre_build:
+    commands:
+      - echo Logging in to Docker Hub
+      - docker login -u $DOCKERHUB_USER -p "$DOCKERHUB_PASSWORD"
+      - echo "Docker pwd is $DOCKERHUB_PASSWORD"
+      #- export IMAGE_REPO_NAME=$(jq --raw-output -r '.name' package.json)
+      - export IMAGE_TAG=$(jq --raw-output -r '.version' package.json)
+      - echo Start testing the application ...
+      - docker-compose -f docker/docker-compose-local.yml up --build -d
+      - sleep 25s
+      - HTTP_STATUS=$(curl --write-out '%{http_code}' --silent --output /dev/null http://localhost:8080/api/stocks)
+      - echo "${HTTP_STATUS}";
+      - |
+        if [ "$HTTP_STATUS" -ne 200 ] ; then
+          echo "Healthcheck status changed to $HTTP_STATUS" | exit 1
+        fi
+      - docker-compose -f docker/docker-compose.yml down
+  build:
+    commands: 
+      - echo Build started on `date`
+      - echo "Building the Docker image $IMAGE_TAG ..."
+      - docker build -f docker/Dockerfile -t $IMAGE_REPO_NAME:$IMAGE_TAG -t $IMAGE_REPO_NAME:latest .
+      - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+      - docker tag $IMAGE_REPO_NAME:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:latest
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo "Logging in to Amazon ECR $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+      - echo Pushing the Docker image...
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:latest
+      - printf '{"ImageURI":"%s"}' "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG" > imageDetail.json
+      - envsubst < "taskdef_template.json" > taskdef.json
+      - envsubst < "appspec_templeate.yaml" > appspec.yaml
+artifacts:
+  files: 
+   - imageDetail.json
+   - taskdef.json
+   - appspec.yaml

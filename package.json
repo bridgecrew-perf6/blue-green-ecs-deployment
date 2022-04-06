@@ -1,0 +1,28 @@
+{
+    "name": "tremend-stocks-api",
+    "version": "1.0.0",
+    "private": true,
+    "main": "server.js",
+    "scripts": {
+        "start": "babel src --out-dir dist && nodemon ./dist/server.js",
+        "build": "babel src --out-dir dist",
+        "serve": "node dist/server.js",
+        "watch": "nodemon --exec babel-node src/server.js"
+    },
+    "dependencies": {
+        "aws-sdk": "^2.1099.0",
+        "cookie-parser": "~1.4.4",
+        "cors": "^2.8.5",
+        "debug": "~2.6.9",
+        "express": "~4.16.1",
+        "http-errors": "~1.6.3",
+        "morgan": "~1.9.1",
+        "pug": "^2.0.4",
+        "uuid": "^8.3.2"
+    },
+    "devDependencies": {
+        "@babel/cli": "^7.16.0",
+        "@babel/core": "^7.16.0",
+        "@babel/preset-env": "^7.16.11"
+    }
+}

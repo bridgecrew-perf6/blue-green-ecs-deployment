@@ -1,0 +1,551 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: An example CloudFormation template for Fargate.
+Parameters:
+  ApiName:
+    Type: String
+    Default: stocks
+  Email:
+    Description: The email address where CodePipeline sends pipeline notifications
+    Type: String
+    Default: catalin.vrinceanu@tremend.com
+  RepositoryName:
+    Type: String
+    Default: tremend-stocks-api
+    Description: CodeCommit repository name
+  Environment:
+    Type: String
+    Default: production
+    Description: Use `production` in case that is not a local development
+  MainRepositoryBranch:
+    Type: String
+    Default: master
+  DevelopRepositoryBranch:
+    Type: String
+    Default: develop
+  PipelineRoleARN:
+    Type: String
+    Default: arn:aws:iam::380637079963:role/IAM-Roles-APIsPipelineExecutionRole-1MWIECDSHDFWE
+  CodeBuildRoleARN:
+    Type: String
+    Default: arn:aws:iam::380637079963:role/IAM-Roles-CodeBuildTremendAPIs-NT7VHYVYVIX2
+  CodeDeployRoleARN:
+    Type: String
+    Default: arn:aws:iam::380637079963:role/IAM-Roles-AWSCodeDeployRoleForECS-1NB6EDSG886MF
+  VPC:
+    Type: AWS::EC2::VPC::Id
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet::Id
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet::Id
+  PublicSubnetC:
+    Type: AWS::EC2::Subnet::Id
+  ElbSecurityGroup:
+    Type: String
+    Default: sg-0ec39c0f7170e3165
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet::Id
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet::Id
+  PrivateSubnetC:
+    Type: AWS::EC2::Subnet::Id
+  ContainerSecurityGroup:
+    Type: String
+    Default: sg-09441a5b71ef54869
+  CommonSecurityGroup:
+    Type: String
+    Default: sg-0caf0a0821742bde8
+  EnvSecurityGroup:
+    Type: String
+    Default: sg-0ec77ad02dbae8df0
+  ContainerPort:
+    Type: Number
+    Default: 8080
+  LoadBalancerPort:
+    Type: Number
+    Default: 443
+  LoadBalancerCertificateArn:
+    Type: String
+    Default: arn:aws:acm:us-east-1:380637079963:certificate/2fcbd1e3-3955-47bf-aba8-98a24d2bdc04
+  ContainerHealthCheckPath:
+    Type: String
+    Default: /api/stocks
+  DesiredCount:
+    Type: Number
+    Default: 0
+  ImageTag:
+    Type: String
+    Default: latest
+    Description: Use specific version like `1.0.0` or `latest`
+  TaskIamRole:
+    Type: String
+    Default: arn:aws:iam::380637079963:role/ECS_TaskRole
+  ExecutionTaskIamRole:
+    Type: String
+    Default: arn:aws:iam::380637079963:role/ECS_ExecutionTaskRole
+  HostedZoneName:
+    Type: String
+    Default: mytremend.com
+  Subdomain:
+    Type: String
+    Default: api
+  DynamoTableName:
+    Type: String
+    Default: stocks
+
+Resources:
+  EcrRepository:
+    Type: AWS::ECR::Repository
+    Properties: 
+      RepositoryName: !Join ['-', [!Ref ApiName, 'api']]
+      RepositoryPolicyText: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Sid: AllowPushPull
+            Effect: Allow
+            Principal: 
+              AWS: 
+                - !Join ['', ['arn:aws:iam::', !Ref AWS::AccountId, ':user/cvrinceanu']]
+            Action: 
+              - "ecr:GetDownloadUrlForLayer"
+              - "ecr:BatchGetImage"
+              - "ecr:BatchCheckLayerAvailability"
+              - "ecr:PutImage"
+              - "ecr:InitiateLayerUpload"
+              - "ecr:UploadLayerPart"
+              - "ecr:CompleteLayerUpload"
+
+  CodePipelineSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Endpoint: !Ref Email
+          Protocol: email
+  ArtifactStoreBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Join ['.', [!Ref ApiName, 'api','pipeline']]
+      VersioningConfiguration:
+        Status: Enabled
+  ECSConfigBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Join ['.', [!Ref ApiName, 'api','config']]
+      VersioningConfiguration:
+        Status: Enabled
+  
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Join ['-', [!Ref ApiName, 'api', 'build']]
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: buildspec.yaml
+      Artifacts:
+        Type: CODEPIPELINE
+      ServiceRole: !Ref CodeBuildRoleARN
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:3.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: S3_BUCKET
+            Type: "PLAINTEXT"
+            Value: !Ref ArtifactStoreBucket
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref "AWS::Region"
+            Type: "PLAINTEXT"
+          - Name: AWS_ACCOUNT_ID
+            Type: "PLAINTEXT"
+            Value: !Ref "AWS::AccountId"
+          - Name: DOCKERHUB_USER
+            Type: PARAMETER_STORE
+            Value: "DOCKERHUB_USER"
+          - Name: DOCKERHUB_PASSWORD
+            Type: PARAMETER_STORE
+            Value: "DOCKERHUB_PASSWORD"
+          - Name: IMAGE_REPO_NAME
+            Type: PLAINTEXT
+            Value: !Ref EcrRepository
+          - Name: IMAGE_REPO_URI
+            Type: PLAINTEXT
+            Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${EcrRepository}
+          - Name: TASK_ROLE_ARN
+            Type: PLAINTEXT
+            Value: !Ref TaskIamRole
+          - Name: TASK_EXECUTION_ROLE_ARN
+            Type: PLAINTEXT
+            Value: !Ref ExecutionTaskIamRole
+          - Name: TASK_CONTAINER_NAME
+            Type: PLAINTEXT
+            Value: !Sub ${ApiName}-service
+          - Name: TASK_DYNAMO_HOST
+            Type: PLAINTEXT
+            Value: !Ref DynamoTableName
+          - Name: TASK_ENVIRONMENT
+            Type: PLAINTEXT
+            Value: !Ref Environment
+          - Name: TASK_LOG_GROUP
+            Type: PLAINTEXT
+            Value: !Ref APICloudwatchLogsGroup
+          - Name: TASK_CONTAINER_PORT
+            Type: PLAINTEXT
+            Value: !Ref ContainerPort
+          - Name: TASK_SUBENT_A
+            Type: PLAINTEXT
+            Value: !Ref PrivateSubnetA
+          - Name: TASK_SUBENT_B
+            Type: PLAINTEXT
+            Value: !Ref PrivateSubnetB
+          - Name: TASK_SUBENT_C
+            Type: PLAINTEXT
+            Value: !Ref PrivateSubnetC
+          - Name: TASK_SG_CONTAINER
+            Type: PLAINTEXT
+            Value: !Ref ContainerSecurityGroup
+          - Name: TASK_SG_ENV
+            Type: PLAINTEXT
+            Value: !Ref EnvSecurityGroup
+          - Name: TASK_SG_COMMON
+            Type: PLAINTEXT
+            Value: !Ref CommonSecurityGroup
+      Cache:
+        Type: S3
+        Location:
+          Fn::Sub: ${ArtifactStoreBucket}/cache
+  
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${ApiName}-elb
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+        - !Ref PublicSubnetC
+      SecurityGroups:
+        - !Ref ElbSecurityGroup
+        - !Ref CommonSecurityGroup
+        - !Ref EnvSecurityGroup
+  
+  DNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneName: !Join ['', [!Ref HostedZoneName, .]]
+      Name: !Join ['', [!Ref Subdomain, ., !Ref HostedZoneName, .]]
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt LoadBalancer.DNSName
+        HostedZoneId: !GetAtt LoadBalancer.CanonicalHostedZoneID
+  
+  ListenerHTTPS:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroupBlue
+          Type: forward
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: !Ref LoadBalancerPort
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref LoadBalancerCertificateArn
+
+  ListenerHTTP:
+        Type: "AWS::ElasticLoadBalancingV2::Listener"
+        Properties:
+            LoadBalancerArn: !Ref LoadBalancer
+            Port: 80
+            Protocol: "HTTP"
+            DefaultActions: 
+              - 
+                Order: 1
+                RedirectConfig: 
+                    Protocol: "HTTPS"
+                    Port: "443"
+                    Host: "#{host}"
+                    Path: "/#{path}"
+                    Query: "#{query}"
+                    StatusCode: "HTTP_301"
+                Type: "redirect"
+  
+  TestListenerHTTP:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroupGreen
+          Type: forward
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 8080
+      Protocol: HTTP
+  
+  ListenerRuleProd:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroupBlue
+      Conditions:
+        - Field: path-pattern
+          Values:
+          - "*"
+      ListenerArn: !Ref ListenerHTTPS
+      Priority: 1
+  
+  TargetGroupBlue:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VPC
+      TargetType: ip
+      Port: !Ref ContainerPort
+      Protocol: HTTP
+      Matcher:
+        HttpCode: 200-299
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: !Ref ContainerHealthCheckPath
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Name: !Sub ${ApiName}-targetgroup-bl
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 30
+      Tags:
+        - Key: Identifier
+          Value: !Ref ApiName
+
+  TargetGroupGreen:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VPC
+      TargetType: ip
+      Port: !Ref ContainerPort
+      Protocol: HTTP
+      Matcher:
+        HttpCode: 200-299
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: !Ref ContainerHealthCheckPath
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Name: !Sub ${ApiName}-targetgroup-gr
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 30
+      Tags:
+        - Key: Identifier
+          Value: !Ref ApiName
+
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${ApiName}-ecs-fargate-cluster
+  
+  EcsService:
+    Type: AWS::ECS::Service
+    # This dependency is needed so that the load balancer is setup correctly in time
+    DependsOn:
+      - ListenerHTTPS
+    Properties: 
+      ServiceName: !Sub ${ApiName}-service
+      Cluster: !Ref EcsCluster
+      DeploymentController: 
+        Type: CODE_DEPLOY
+      TaskDefinition: !Ref TaskDefinition
+      SchedulingStrategy: REPLICA
+      # DeploymentConfiguration:
+      #   MinimumHealthyPercent: 100
+      #   MaximumPercent: 200
+      DesiredCount: !Ref DesiredCount
+      # This may need to be adjusted if the container takes a while to start up
+      HealthCheckGracePeriodSeconds: 30
+      LaunchType: FARGATE
+      NetworkConfiguration: 
+        AwsvpcConfiguration:
+          # change to DISABLED if you're using private subnets that have access to a NAT gateway
+          AssignPublicIp: DISABLED
+          Subnets:
+            - !Ref PrivateSubnetA
+            - !Ref PrivateSubnetB
+            - !Ref PrivateSubnetC
+          SecurityGroups:
+            - !Ref ContainerSecurityGroup
+            - !Ref CommonSecurityGroup
+            - !Ref EnvSecurityGroup
+      LoadBalancers:
+        - ContainerName: !Sub ${ApiName}-service
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref TargetGroupBlue
+        - ContainerName: !Sub ${ApiName}-service
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref TargetGroupGreen
+
+  APICloudwatchLogsGroup:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName: !Sub '${ApiName}-ECSLogGroup'
+      RetentionInDays: 14
+  
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${ApiName}-task
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      # 256 (.25 vCPU) - Available memory values: 0.5GB, 1GB, 2GB
+      # 512 (.5 vCPU) - Available memory values: 1GB, 2GB, 3GB, 4GB
+      # 1024 (1 vCPU) - Available memory values: 2GB, 3GB, 4GB, 5GB, 6GB, 7GB, 8GB
+      # 2048 (2 vCPU) - Available memory values: Between 4GB and 16GB in 1GB increments
+      # 4096 (4 vCPU) - Available memory values: Between 8GB and 30GB in 1GB increments
+      Cpu: 256
+      # 0.5GB, 1GB, 2GB - Available cpu values: 256 (.25 vCPU)
+      # 1GB, 2GB, 3GB, 4GB - Available cpu values: 512 (.5 vCPU)
+      # 2GB, 3GB, 4GB, 5GB, 6GB, 7GB, 8GB - Available cpu values: 1024 (1 vCPU)
+      # Between 4GB and 16GB in 1GB increments - Available cpu values: 2048 (2 vCPU)
+      # Between 8GB and 30GB in 1GB increments - Available cpu values: 4096 (4 vCPU)
+      Memory: 0.5GB
+      ExecutionRoleArn: !Ref ExecutionTaskIamRole
+      TaskRoleArn: !Ref TaskIamRole
+      Tags:
+        - Key: Name
+          Value: !Join [' ', [!Ref ApiName, 'service']]
+      ContainerDefinitions:
+        - Name: !Sub ${ApiName}-service
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${EcrRepository}:${ImageTag}
+          Essential: true
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref APICloudwatchLogsGroup
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: ecs
+          Memory: 128
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+          Environment:
+            - Name: Tag
+              Value: !Ref ImageTag
+            - Name: DYNAMO_HOST
+              Value: !Ref DynamoTableName
+            - Name: DYNAMO_REGION
+              Value: !Ref "AWS::Region"
+            - Name: DEPLOYMENT_TYPE
+              Value: test
+            - Name: NODE_ENV
+              Value: !Ref Environment
+
+  CodeDeployApplication: 
+    Type: AWS::CodeDeploy::Application 
+    Properties:
+      ComputePlatform: ECS
+      ApplicationName : !Join ['-', [!Ref ApiName, 'application']]
+
+  DeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties: 
+      ApplicationName: !Ref CodeDeployApplication
+      AutoRollbackConfiguration: 
+        Enabled: true
+        Events:
+          - DEPLOYMENT_FAILURE
+      BlueGreenDeploymentConfiguration: 
+        DeploymentReadyOption: 
+          ActionOnTimeout: CONTINUE_DEPLOYMENT
+          WaitTimeInMinutes: 0
+        TerminateBlueInstancesOnDeploymentSuccess:
+          Action: TERMINATE
+          TerminationWaitTimeInMinutes: 5
+      DeploymentConfigName: CodeDeployDefault.ECSAllAtOnce
+      DeploymentGroupName: !Join ['-', [!Ref ApiName, 'deployment-group']]
+      DeploymentStyle: 
+        DeploymentOption: WITH_TRAFFIC_CONTROL
+        DeploymentType: BLUE_GREEN
+      LoadBalancerInfo: 
+        TargetGroupPairInfoList: 
+          - TargetGroups:
+              - Name: !GetAtt TargetGroupBlue.TargetGroupName
+              - Name: !GetAtt TargetGroupGreen.TargetGroupName
+            ProdTrafficRoute: 
+              ListenerArns: 
+                - !Ref ListenerHTTPS
+            TestTrafficRoute:
+              ListenerArns: 
+                - !Ref TestListenerHTTP
+      ServiceRoleArn: !Ref CodeDeployRoleARN
+      ECSServices:
+        - ClusterName: !Ref EcsCluster
+          ServiceName: !GetAtt EcsService.Name
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      ArtifactStore:
+        Location: !Ref 'ArtifactStoreBucket'
+        Type: S3
+      DisableInboundStageTransitions: []
+      Name: !Join ['-', [!Ref ApiName, 'api','pipeline']]
+      RoleArn: !Ref PipelineRoleARN
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source 
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: '1'
+                Provider: CodeCommit
+              Configuration:
+                RepositoryName: !Ref RepositoryName
+                BranchName: !Ref DevelopRepositoryBranch
+                OutputArtifactFormat: CODE_ZIP
+              Namespace: SourceVariables
+              OutputArtifacts:
+                - Name: SourceArtifact
+              RunOrder: 1
+        - Name: Build
+          Actions:
+            - Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: '1'
+                Provider: CodeBuild
+              Configuration:
+                ProjectName:
+                  Ref: CodeBuildProject
+              Namespace: BuildVariables
+              InputArtifacts:
+                - Name: SourceArtifact
+              OutputArtifacts:
+                - Name: BuildArtifact
+              RunOrder: 2
+        - Name: Deploy
+          Actions:
+            - Name: Deploy
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: 1
+                Provider: CodeDeployToECS
+              Configuration:
+                ApplicationName: !Ref CodeDeployApplication
+                DeploymentGroupName: !Ref DeploymentGroup
+                AppSpecTemplateArtifact: BuildArtifact
+                AppSpecTemplatePath: appspec.yaml
+                TaskDefinitionTemplateArtifact: BuildArtifact
+                TaskDefinitionTemplatePath: taskdef.json
+                Image1ArtifactName: BuildArtifact
+                Image1ContainerName: IMAGE
+              Region: !Ref "AWS::Region"
+              Namespace: DeployVariables
+              InputArtifacts:
+                - Name: BuildArtifact
+              RunOrder: 3
+Outputs:
+  EcrARN:
+    Description: Table Created using this template.
+    Value: !GetAtt EcrRepository.Arn
+  ServiceUrl:
+    Description: URL of the load balancer for the service.
+    Value: !Sub http://${LoadBalancer.DNSName}
