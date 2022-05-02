@@ -92,6 +92,70 @@ Parameters:
     Type: String
     Default: stocks
 
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - 
+        Label: 
+          default: "Description"
+        Parameters: 
+          - ApiName
+          - Email
+          - Environment
+      - 
+        Label: 
+          default: "Repository Configuration"
+        Parameters: 
+          - RepositoryName
+          - MainRepositoryBranch
+          - DevelopRepositoryBranch
+      - 
+        Label: 
+          default: "Networking"
+        Parameters: 
+          - VPC
+          - PublicSubnetA
+          - PublicSubnetB
+          - PublicSubnetC
+          - PrivateSubnetA
+          - PrivateSubnetB
+          - PrivateSubnetC
+      - 
+        Label: 
+          default: "Load Balancer"
+        Parameters: 
+          - ElbSecurityGroup
+          - CommonSecurityGroup
+          - EnvSecurityGroup
+          - LoadBalancerPort
+      - 
+        Label: 
+          default: "DNS"
+        Parameters: 
+          - HostedZoneName
+          - Subdomain
+          - LoadBalancerCertificateArn
+      - 
+        Label: 
+          default: "Code Pipeline"
+        Parameters: 
+          - PipelineRoleARN
+          - CodeBuildRoleARN
+          - CodeDeployRoleARN
+      - 
+        Label: 
+          default: "Task details"
+        Parameters: 
+          - ContainerPort
+          - ContainerHealthCheckPath
+          - ContainerSecurityGroup
+          - TaskIamRole
+          - ExecutionTaskIamRole
+          - ImageTag
+          - DesiredCount
+          - DynamoTableName
+
+
 Resources:
   EcrRepository:
     Type: AWS::ECR::Repository
